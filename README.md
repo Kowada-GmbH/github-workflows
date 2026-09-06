@@ -36,4 +36,4 @@ CI für Symfony-Bundles: PHPUnit (Matrix aus PHP-Version × niedrigster/höchste
 
 | Input          | Beschreibung                              | Default          |
 |----------------|-------------------------------------------|------------------|
-| `php-versions` | JSON-Array der zu testenden PHP-Versionen | `["8.3", "8.4"]` |
+| `php-versions` | JSON-Array der zu testenden PHP-Versionen | `["8.4", "8.5"]` |
