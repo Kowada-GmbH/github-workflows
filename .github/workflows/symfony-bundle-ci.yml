@@ -31,7 +31,7 @@ jobs:
           coverage: none
 
       - name: Install Composer dependencies
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
         with:
           dependency-versions: ${{ matrix.dependency-versions }}
 
@@ -52,7 +52,7 @@ jobs:
           coverage: none
 
       - name: Install Composer dependencies
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
 
       - name: Run PHPStan
         run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
@@ -74,7 +74,7 @@ jobs:
         run: composer validate --strict
 
       - name: Install Composer dependencies
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
 
       - name: Run composer audit
         run: composer audit
