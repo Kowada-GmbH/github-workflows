@@ -1,4 +1,4 @@
-# Kowada GitHub Workflows (Kowada-GmbH/github-workflows)
+# Kowada GitHub Workflows
 
 Gemeinsam genutzte GitHub-Actions-Workflows für Projekte von Kowada.
 
