@@ -56,7 +56,12 @@ CI und Auslieferung für Symfony-Apps auf Basis von [Symfony Docker](https://git
 - Doctrine mit Migrations, PHPUnit, PHPStan und PHP CS Fixer als Composer-Abhängigkeiten
 - für PWAs: `public/site.webmanifest`, `public/sw.js`, `public/favicon.ico`, `public/apple-touch-icon.png` und eine Route `/offline`
 
-**Aufrufender Workflow:** Die Berechtigungen für GHCR (`packages: write`) und super-linter (`statuses: write`) muss der Aufrufer freigeben, sie dürfen die des Reusable Workflows nicht unterschreiten. `secrets: inherit` ist nötig, damit das Secret der Environment `production` im Reusable Workflow ankommt: Entgegen der GitHub-Dokumentation sieht der Job es sonst nicht, auch wenn er die Environment angibt.
+**Aufrufender Workflow:** Die Berechtigungen für GHCR (`packages: write`) und super-linter (`statuses: write`) muss der Aufrufer freigeben, sie dürfen die des Reusable Workflows nicht unterschreiten. `secrets: inherit` ist nötig, damit das Secret der Environment `production` im Reusable Workflow ankommt: Entgegen der GitHub-Dokumentation sieht der Job es sonst nicht, auch wenn er die Environment angibt. `secrets: inherit` wirkt aber nur für Repositories der Organisation `Kowada-GmbH`. Liegt das Projekt unter einem anderen Account, das Secret stattdessen als Repository-Secret anlegen und explizit übergeben:
+
+```yaml
+    secrets:
+      PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+```
 
 ```yaml
 name: CI
