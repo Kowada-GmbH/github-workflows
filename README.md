@@ -56,7 +56,7 @@ CI und Auslieferung für Symfony-Apps auf Basis von [Symfony Docker](https://git
 - Doctrine mit Migrations, PHPUnit, PHPStan und PHP CS Fixer als Composer-Abhängigkeiten
 - für PWAs: `public/site.webmanifest`, `public/sw.js`, `public/favicon.ico`, `public/apple-touch-icon.png` und eine Route `/offline`
 
-**Aufrufender Workflow:** Die Berechtigungen für GHCR (`packages: write`) und super-linter (`statuses: write`) muss der Aufrufer freigeben, sie dürfen die des Reusable Workflows nicht unterschreiten.
+**Aufrufender Workflow:** Die Berechtigungen für GHCR (`packages: write`) und super-linter (`statuses: write`) muss der Aufrufer freigeben, sie dürfen die des Reusable Workflows nicht unterschreiten. `secrets: inherit` ist nötig, damit das Secret der Environment `production` im Reusable Workflow ankommt: Entgegen der GitHub-Dokumentation sieht der Job es sonst nicht, auch wenn er die Environment angibt.
 
 ```yaml
 name: CI
@@ -83,6 +83,7 @@ jobs:
       contents: read
       packages: write
       statuses: write
+    secrets: inherit
 ```
 
 **Deployment:** Der Job `Publish image` läuft in der GitHub-Environment `production`. Beide Werte sind optional und werden dort hinterlegt:
@@ -92,4 +93,4 @@ jobs:
 | `PORTAINER_WEBHOOK_URL` | Secret   | Stack-Webhook (Portainer Business Edition), der nach dem Push aufgerufen wird. Fehlt er, wird nur das Image veröffentlicht, z. B. für Server, die nur per VPN erreichbar sind |
 | `PRODUCTION_URL`        | Variable | URL der App, die GitHub bei jedem Deployment verlinkt                                       |
 
-**Linting:** Hat das Projekt keine eigene `.github/linters/zizmor.yaml`, stellt der Workflow eine bereit, die Actions und Reusable Workflows per Branch oder Tag statt per Commit-Hash erlaubt, damit der Aufruf `@master` nicht beanstandet wird.
+**Linting:** Hat das Projekt keine eigene `.github/linters/zizmor.yaml`, stellt der Workflow eine bereit, die Actions und Reusable Workflows per Branch oder Tag statt per Commit-Hash erlaubt, damit der Aufruf `@master` nicht beanstandet wird, und `secrets: inherit` zulässt, da die Secrets nur an diesen eigenen Workflow gehen.

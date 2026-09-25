@@ -4,7 +4,7 @@ on:
   workflow_call:
     secrets:
       PORTAINER_WEBHOOK_URL:
-        description: 'Webhook of the Portainer stack to redeploy after publishing the image, usually a secret of the "production" environment. Without it, nothing is redeployed.'
+        description: 'Webhook of the Portainer stack to redeploy after publishing the image, usually a secret of the "production" environment, which only reaches this workflow if the caller sets "secrets: inherit". Without it, nothing is redeployed.'
         required: false
 
 permissions:
@@ -154,7 +154,7 @@ jobs:
         run: |
           if [ ! -f .github/linters/zizmor.yaml ]; then
             mkdir -p .github/linters
-            printf '%s\n' '---' 'rules:' '  unpinned-uses:' '    config:' '      policies:' '        "*": ref-pin' > .github/linters/zizmor.yaml
+            printf '%s\n' '---' 'rules:' '  unpinned-uses:' '    config:' '      policies:' '        "*": ref-pin' '  secrets-inherit:' '    disable: true' > .github/linters/zizmor.yaml
           fi
 
       - name: Lint Code Base
