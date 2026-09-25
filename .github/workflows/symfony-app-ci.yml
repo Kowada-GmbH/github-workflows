@@ -1,0 +1,231 @@
+name: Symfony App CI
+
+on:
+  workflow_call:
+    secrets:
+      PORTAINER_WEBHOOK_URL:
+        description: 'Webhook of the Portainer stack to redeploy after publishing the image, usually a secret of the "production" environment. Without it, nothing is redeployed.'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build Docker images
+        uses: docker/bake-action@v7
+        with:
+          pull: true
+          load: true
+          source: .
+          files: |
+            compose.yaml
+            compose.override.yaml
+          set: |
+            *.cache-from=type=gha,scope=${{ github.ref }}
+            *.cache-from=type=gha,scope=refs/heads/master
+            *.cache-to=type=gha,scope=${{ github.ref }},mode=max
+
+      - name: Start services
+        run: docker compose up --wait --no-build
+
+      - name: Check HTTP reachability
+        run: curl -v --fail-with-body http://localhost
+
+      - name: Check HTTPS reachability
+        run: curl -v --insecure --fail-with-body https://localhost
+
+      - name: Create test database
+        run: docker compose exec -T php bin/console -e test doctrine:database:create
+
+      - name: Run migrations
+        run: docker compose exec -T php bin/console -e test doctrine:migrations:migrate --no-interaction
+
+      - name: Run PHPUnit
+        run: docker compose exec -T php bin/phpunit
+
+      - name: Validate Doctrine schema
+        run: docker compose exec -T php bin/console -e test doctrine:schema:validate
+
+      - name: Run PHPStan
+        run: docker compose exec -T php vendor/bin/phpstan analyse
+
+      - name: Run PHP CS Fixer
+        run: docker compose exec -T php vendor/bin/php-cs-fixer check --diff
+
+      - name: Lint service container
+        run: docker compose exec -T php bin/console lint:container
+
+      - name: Lint Twig templates
+        run: docker compose exec -T php bin/console lint:twig templates/
+
+      - name: Lint YAML config
+        run: docker compose exec -T php bin/console lint:yaml config/ --parse-tags
+
+      - name: Validate composer.json
+        run: docker compose exec -T php composer validate --strict
+
+      - name: Run composer audit
+        run: docker compose exec -T php composer audit
+
+  production:
+    name: Production image
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_FILE: compose.yaml:compose.prod.yaml
+      APP_SECRET: ci-only-app-secret
+      MAILER_DSN: smtp://localhost:25
+      POSTGRES_PASSWORD: ci-only-postgres-password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build Docker images
+        uses: docker/bake-action@v7
+        with:
+          pull: true
+          load: true
+          source: .
+          files: |
+            compose.yaml
+            compose.prod.yaml
+          set: |
+            *.cache-from=type=gha,scope=${{ github.ref }}-prod
+            *.cache-from=type=gha,scope=refs/heads/master-prod
+            *.cache-to=type=gha,scope=${{ github.ref }}-prod,mode=max
+
+      - name: Refuse to start with placeholder configuration
+        run: |
+          status=0
+          timeout 120 docker run --rm app-php-prod || status=$?
+          test "$status" -eq 1
+
+      - name: Start services
+        run: docker compose up --wait --no-build
+
+      - name: Check HTTPS reachability
+        run: curl -v --insecure --fail-with-body https://localhost
+
+      - name: Check that the profiler is not exposed
+        run: test "$(curl -s --insecure -o /dev/null -w '%{http_code}' https://localhost/_profiler)" = 404
+
+      - name: Check the PWA files
+        if: hashFiles('public/site.webmanifest') != ''
+        run: |
+          test "$(curl -s --insecure --fail -o /dev/null -w '%{content_type}' https://localhost/site.webmanifest)" = application/manifest+json
+          for path in /sw.js /offline /favicon.ico /apple-touch-icon.png $(jq -r '.icons[].src' public/site.webmanifest | sort -u); do
+            curl --insecure --fail --silent --show-error --output /dev/null "https://localhost$path"
+          done
+
+      - name: Lint service container
+        run: docker compose exec -T php bin/console lint:container
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      statuses: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Provide the default zizmor configuration
+        run: |
+          if [ ! -f .github/linters/zizmor.yaml ]; then
+            mkdir -p .github/linters
+            printf '%s\n' '---' 'rules:' '  unpinned-uses:' '    config:' '      policies:' '        "*": ref-pin' > .github/linters/zizmor.yaml
+          fi
+
+      - name: Lint Code Base
+        uses: super-linter/super-linter/slim@v8
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_BASH: true
+          VALIDATE_CSS_PRETTIER: true
+          VALIDATE_DOCKERFILE_HADOLINT: true
+          VALIDATE_GITHUB_ACTIONS: true
+          VALIDATE_GITHUB_ACTIONS_ZIZMOR: true
+          VALIDATE_GITLEAKS: true
+          VALIDATE_GIT_MERGE_CONFLICT_MARKERS: true
+          VALIDATE_JAVASCRIPT_ES: true
+          VALIDATE_JAVASCRIPT_PRETTIER: true
+          VALIDATE_JSON_PRETTIER: true
+          VALIDATE_MARKDOWN_PRETTIER: true
+          VALIDATE_YAML_PRETTIER: true
+
+  publish:
+    name: Publish image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs:
+      - tests
+      - production
+      - lint
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Determine the image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the production image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: frankenphp_prod
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ github.ref }}-prod
+
+      - name: Redeploy the Portainer stack
+        env:
+          PORTAINER_WEBHOOK_URL: ${{ secrets.PORTAINER_WEBHOOK_URL }}
+        run: |
+          if [ -z "$PORTAINER_WEBHOOK_URL" ]; then
+            echo "::notice::PORTAINER_WEBHOOK_URL is not set, so the stack is not redeployed"
+            exit 0
+          fi
+          curl --fail --silent --show-error --request POST "$PORTAINER_WEBHOOK_URL"
