@@ -46,16 +46,28 @@ jobs:
       - name: Check HTTPS reachability
         run: curl -v --insecure --fail-with-body https://localhost
 
+      - name: Detect Doctrine ORM
+        id: doctrine
+        run: |
+          if docker compose exec -T php composer show --no-interaction doctrine/orm >/dev/null 2>&1; then
+            echo "installed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "installed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create test database
+        if: steps.doctrine.outputs.installed == 'true'
         run: docker compose exec -T php bin/console -e test doctrine:database:create
 
       - name: Run migrations
+        if: steps.doctrine.outputs.installed == 'true'
         run: docker compose exec -T php bin/console -e test doctrine:migrations:migrate --no-interaction
 
       - name: Run PHPUnit
         run: docker compose exec -T php bin/phpunit
 
       - name: Validate Doctrine schema
+        if: steps.doctrine.outputs.installed == 'true'
         run: docker compose exec -T php bin/console -e test doctrine:schema:validate
 
       - name: Run PHPStan
